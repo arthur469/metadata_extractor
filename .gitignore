@@ -1,5 +1,8 @@
 files/*
+!files/.gitkeep 
 results/*
+!results/.gitkeep 
 temp/*
+!temp/.gitkeep 
 env/
 __pycache__/
