@@ -1,6 +1,6 @@
 import json
 import logging
-from extract import extract_docx_metadata, extract_excel_metadata, extract_ppt_metadata, extract_odf_metadata, extract_pdf_metadata, extract_png_metadata, extract_jpeg_metadata
+from extract import *
 import os
 import datetime
 
@@ -26,30 +26,59 @@ def save_metadata_to_json(metadata_results, output_file):
     except Exception as e:
         logger.error(f"Erreur lors de la sauvegarde des métadonnées dans le fichier JSON : {e}")
 
-# Fonction principale pour traiter chaque fichier en fonction du MIME type
 def process_file_metadata(file_path, mime_type):
     try:
+        # Gestion des types MIME standard
         if mime_type == 'application/vnd.openxmlformats-officedocument.wordprocessingml.document':
-            # Fichier Word (.docx)
             metadata = extract_docx_metadata(file_path)
         elif mime_type == 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet':
-            # Fichier Excel (.xlsx)
             metadata = extract_excel_metadata(file_path)
         elif mime_type == 'application/vnd.openxmlformats-officedocument.presentationml.presentation':
-            # Fichier PowerPoint (.pptx)
             metadata = extract_ppt_metadata(file_path)
         elif mime_type in ['application/vnd.oasis.opendocument.text', 'application/vnd.oasis.opendocument.spreadsheet', 'application/vnd.oasis.opendocument.presentation']:
-            # Fichiers OpenOffice (.odt, .ods, .odp)
             metadata = extract_odf_metadata(file_path)
         elif mime_type == 'application/pdf':
-            # Fichier PDF
             metadata = extract_pdf_metadata(file_path)
-        elif mime_type.startswith('image/png'):
-            # Fichier image (JPEG, PNG, etc.)
+        elif mime_type == 'image/png':
             metadata = extract_png_metadata(file_path)
-        elif mime_type.startswith('image/jpeg'):
-            # Fichier image (JPEG, PNG, etc.)
+        elif mime_type == 'image/jpeg':
             metadata = extract_jpeg_metadata(file_path)
+        elif mime_type == 'image/tiff':
+            metadata = extract_tiff_metadata(file_path)
+        elif mime_type == 'image/webp':
+            metadata = extract_webp_metadata(file_path)
+        elif mime_type in ['image/heic', 'image/heif']:
+            metadata = extract_heic_metadata(file_path)
+
+        # Gestion des fichiers plain-text par extension
+        elif mime_type == 'text/plain':
+            # Récupérer l'extension du fichier
+            _, file_extension = os.path.splitext(file_path)
+            file_extension = file_extension.lower()
+
+            # Vérification de l'extension et appel de la fonction correspondante
+            if file_extension == '.docx':
+                metadata = extract_docx_metadata(file_path)
+            elif file_extension == '.xlsx':
+                metadata = extract_excel_metadata(file_path)
+            elif file_extension == '.pptx':
+                metadata = extract_ppt_metadata(file_path)
+            elif file_extension in ['.odt', '.ods', '.odp']:
+                metadata = extract_odf_metadata(file_path)
+            elif file_extension == '.pdf':
+                metadata = extract_pdf_metadata(file_path)
+            elif file_extension == '.png':
+                metadata = extract_png_metadata(file_path)
+            elif file_extension == '.jpg' or file_extension == '.jpeg':
+                metadata = extract_jpeg_metadata(file_path)
+            elif file_extension == '.tiff' or file_extension == '.tif':
+                metadata = extract_tiff_metadata(file_path)
+            elif file_extension == '.webp':
+                metadata = extract_webp_metadata(file_path)
+            elif file_extension in ['.heic', '.heif']:
+                metadata = extract_heic_metadata(file_path)
+            else:
+                metadata = f"Extension {file_extension} non prise en charge pour MIME type {mime_type}."
         else:
             metadata = f"MIME type {mime_type} non pris en charge."
 

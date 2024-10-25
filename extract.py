@@ -13,6 +13,15 @@ import struct
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
+def extract_exif_metadata(file_path):
+    try:
+        with open(file_path, 'rb') as f:
+            tags = exifread.process_file(f)
+        return {tag: str(tags[tag]) for tag in tags.keys()}
+    except Exception as e:
+        logger.error(f"Erreur lors de l'extraction des métadonnées EXIF pour '{file_path}': {e}")
+        return None
+    
 def extract_pdf_metadata(file_path):
     try:
         doc = pymupdf.open(file_path)
@@ -79,11 +88,11 @@ def extract_jpeg_metadata(file_path):
             format_image = img.format
             mode = img.mode
             info = img.info  # Contient des informations additionnelles, comme le profil ICC, JFIF, etc.
-            
+
             # Ajout des informations de base
             metadata.update({
                 'File Name': os.path.basename(file_path),
-                'File Size': f"{os.path.getsize(file_path) / 1024:.0f} kB",  # Convertir la taille en Ko
+                'File Size': f"{os.path.getsize(file_path) / 1024:.0f} kB",  # Taille en Ko
                 'Format': format_image,
                 'Mode': mode,
                 'Image Width': width,
@@ -92,49 +101,38 @@ def extract_jpeg_metadata(file_path):
                 'Megapixels': round((width * height) / 1_000_000, 1),
             })
 
-            # Vérification des informations spécifiques JFIF (Joint Photographic Experts Group)
+            # Extraction des informations JFIF
             if 'jfif_version' in info:
                 metadata['JFIF Version'] = f"{info['jfif_version'][0]}.{info['jfif_version'][1]}"
             else:
                 metadata['JFIF Version'] = 'Unknown'
 
-            # Résolution de l'image (unités et valeurs)
+            # Résolution et unités de mesure
             if 'dpi' in info:
-                metadata['X Resolution'] = info['dpi'][0]
-                metadata['Y Resolution'] = info['dpi'][1]
+                metadata['X Resolution'] = float(info['dpi'][0])
+                metadata['Y Resolution'] = float(info['dpi'][1])
                 metadata['Resolution Unit'] = 'inches'
             else:
                 metadata['X Resolution'] = 'Unknown'
                 metadata['Y Resolution'] = 'Unknown'
                 metadata['Resolution Unit'] = 'Unknown'
 
-            # Ajout du profil ICC (si disponible)
-            if 'icc_profile' in info:
-                metadata['ICC Profile'] = 'Present'
-            else:
-                metadata['ICC Profile'] = 'Absent'
+            # Ajout du profil ICC
+            metadata['ICC Profile'] = 'Present' if 'icc_profile' in info else 'Absent'
 
-            # Lecture des informations de compression
-            if 'progression' in info:
-                metadata['Encoding Process'] = 'Progressive JPEG, Huffman coding'
-            else:
-                metadata['Encoding Process'] = 'Baseline DCT, Huffman coding'
+            # Compression : Baseline ou Progressive JPEG
+            metadata['Encoding Process'] = 'Progressive JPEG, Huffman coding' if 'progression' in info else 'Baseline DCT, Huffman coding'
 
-            # Bits par échantillon
-            metadata['Bits Per Sample'] = 8  # Les JPEG utilisent typiquement 8 bits par composant
-
-            # Composants de couleur (RGB = 3, CMYK = 4, etc.)
+            # Bits par échantillon et composants de couleur
+            metadata['Bits Per Sample'] = 8
             metadata['Color Components'] = len(img.getbands())
 
-            # YCbCr Subsampling (extrait du JFIF ou supposé être le standard 4:2:0)
+            # Sous-échantillonnage YCbCr
             if 'subsampling' in info:
                 subsampling = info['subsampling']
-                if subsampling == (2, 2):
-                    metadata['YCbCr Subsampling'] = 'YCbCr4:2:0 (2 2)'
-                elif subsampling == (2, 1):
-                    metadata['YCbCr Subsampling'] = 'YCbCr4:2:2 (2 1)'
-                else:
-                    metadata['YCbCr Subsampling'] = 'YCbCr4:4:4 (1 1)'
+                metadata['YCbCr Subsampling'] = 'YCbCr4:2:0 (2 2)' if subsampling == (2, 2) else (
+                    'YCbCr4:2:2 (2 1)' if subsampling == (2, 1) else 'YCbCr4:4:4 (1 1)'
+                )
             else:
                 metadata['YCbCr Subsampling'] = 'Unknown'
 
@@ -142,19 +140,81 @@ def extract_jpeg_metadata(file_path):
         with open(file_path, 'rb') as f:
             tags = exifread.process_file(f)
 
-        exif_metadata = {tag: str(tags[tag]) for tag in tags.keys()}
+        # Filtrage des métadonnées EXIF pour exclure MakerNotes et JPEGThumbnail
+        exif_metadata = {}
+        for tag, value in tags.items():
+            if "MakerNote" not in tag and "JPEGThumbnail" not in tag:
+                exif_metadata[tag] = str(value)
+        
         metadata['EXIF Metadata'] = exif_metadata
+
+        # Lecture des entêtes brutes JPEG
+        raw_header_data = extract_raw_header(file_path)
+        metadata['Raw Header'] = raw_header_data
+
+        # Extraction des commentaires
+        comment = extract_jpeg_comment(file_path)
+        metadata['Comment'] = comment if comment else "None"
 
     except Exception as e:
         logger.error(f"Erreur lors de l'extraction des métadonnées JPEG pour '{file_path}': {e}")
-    
+
     return metadata
+def extract_raw_header(file_path):
+    """
+    Extrait l'entête brute du fichier JPEG pour des informations comme la version JFIF et d'autres métadonnées.
+    """
+    raw_header = []
+    try:
+        with open(file_path, 'rb') as f:
+            # Lecture des 512 premiers octets pour extraire les informations de l'entête brute
+            header = f.read(512)
+            raw_header = ' '.join(f'{byte:02X}' for byte in header)
+    except Exception as e:
+        logger.error(f"Erreur lors de l'extraction des entêtes brutes JPEG pour '{file_path}': {e}")
+    
+    return raw_header
+
+def extract_jpeg_comment(file_path):
+    """
+    Extrait les commentaires JPEG du segment COM.
+    """
+    try:
+        with open(file_path, 'rb') as f:
+            while True:
+                byte = f.read(1)
+                if not byte:
+                    break
+                if byte == b'\xFF':  # Tous les marqueurs JPEG commencent par 0xFF
+                    marker = f.read(1)
+                    if marker == b'\xFE':  # 0xFFFE est le segment de commentaire (COM)
+                        length = struct.unpack('>H', f.read(2))[0]  # Longueur du segment
+                        comment = f.read(length - 2).decode('utf-8', errors='replace')
+                        return comment
+                    else:
+                        # Saute ce segment si ce n'est pas un commentaire
+                        length = struct.unpack('>H', f.read(2))[0]
+                        f.read(length - 2)
+    except Exception as e:
+        logger.error(f"Erreur lors de l'extraction des commentaires JPEG pour '{file_path}': {e}")
+        return None
 
 def extract_png_metadata(file_path):
     metadata = {}
     try:
+        # Utilisation de exifread pour lire les métadonnées si elles existent
         with open(file_path, 'rb') as f:
-            # Lecture du fichier binaire PNG
+            tags = exifread.process_file(f, stop_tag="UNDEF", details=False)
+        
+        # Ajout des métadonnées EXIF lues par exifread si disponibles
+        if tags:
+            exif_metadata = {tag: str(tags[tag]) for tag in tags.keys()}
+            metadata['EXIF Metadata'] = exif_metadata
+        else:
+            metadata['EXIF Metadata'] = "Aucune métadonnée EXIF trouvée"
+
+        # Lecture des chunks du fichier PNG
+        with open(file_path, 'rb') as f:
             header = f.read(8)  # Signature PNG
             if header != b'\x89PNG\r\n\x1a\n':
                 raise ValueError("Ce fichier n'est pas un fichier PNG valide.")
@@ -193,6 +253,79 @@ def extract_png_metadata(file_path):
 
     except Exception as e:
         logger.error(f"Erreur lors de l'extraction des métadonnées PNG pour '{file_path}': {e}")
+
+    return metadata
+
+def extract_tiff_metadata(file_path):
+    metadata = {}
+    try:
+        # Extraction des informations de base avec Pillow
+        with Image.open(file_path) as img:
+            width, height = img.size
+            metadata.update({
+                'Format': img.format,
+                'Mode': img.mode,
+                'Image Width': width,
+                'Image Height': height,
+                'Image Size': f'{width}x{height}'
+            })
+
+        # Extraction des métadonnées EXIF avec exifread
+        exif_metadata = extract_exif_metadata(file_path)
+        metadata['EXIF Metadata'] = exif_metadata if exif_metadata else "None"
+
+    except Exception as e:
+        logger.error(f"Erreur lors de l'extraction des métadonnées TIFF pour '{file_path}': {e}")
+
+    return metadata
+
+def extract_webp_metadata(file_path):
+    metadata = {}
+    try:
+        # Extraction des informations de base avec Pillow
+        with Image.open(file_path) as img:
+            width, height = img.size
+            metadata.update({
+                'Format': img.format,
+                'Mode': img.mode,
+                'Image Width': width,
+                'Image Height': height,
+                'Image Size': f'{width}x{height}'
+            })
+
+        # Extraction des métadonnées EXIF avec exifread
+        exif_metadata = extract_exif_metadata(file_path)
+        metadata['EXIF Metadata'] = exif_metadata if exif_metadata else "None"
+
+    except Exception as e:
+        logger.error(f"Erreur lors de l'extraction des métadonnées WebP pour '{file_path}': {e}")
+
+    return metadata
+
+def extract_heic_metadata(file_path):
+    metadata = {}
+    try:
+        # Utilisation de Pillow (avec pillow-heif) pour lire les informations de base
+        with Image.open(file_path) as img:
+            width, height = img.size
+            mode = img.mode
+            format_image = img.format
+
+            # Ajout des informations de base
+            metadata.update({
+                'Format': format_image,
+                'Mode': mode,
+                'Image Width': width,
+                'Image Height': height,
+                'Image Size': f'{width}x{height}'
+            })
+
+        # Extraction des métadonnées EXIF avec exifread
+        exif_metadata = extract_exif_metadata(file_path)
+        metadata['EXIF Metadata'] = exif_metadata if exif_metadata else "None"
+
+    except Exception as e:
+        logger.error(f"Erreur lors de l'extraction des métadonnées HEIC pour '{file_path}': {e}")
 
     return metadata
 
