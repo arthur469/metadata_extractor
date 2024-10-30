@@ -4,16 +4,23 @@ import os
 import datetime
 
 def main():
-    save_mime_type_to_json(folder_to_process, json_input_path)
-    process_files_and_save_to_json(json_input_path, output_json_path)
+    """
+    Main function that processes files in a directory to extract metadata.
+    
+    First gets MIME types for all files in the input directory and saves them to a JSON file.
+    Then extracts metadata from each file based on its MIME type and saves results to another JSON file.
+    """
+    save_mime_type_to_json(input_directory, mime_types_json_path)
+    process_files_and_save_to_json(mime_types_json_path, metadata_output_path)
 
 if __name__ == '__main__':
-     # Exemple d'utilisation
-    this_dir = os.getcwd()
-    temp_dir = os.path.join(this_dir, 'temp')
-
-    folder_to_process = os.path.join(this_dir, 'files')
-    json_input_path = os.path.join(temp_dir, 'mime.json')
-    output_json_path = os.path.join(this_dir, "results", f"result_{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}.json")
-
+    current_directory = os.getcwd()
+    temp_directory = os.path.join(current_directory, 'temp')
+    input_directory = os.path.join(current_directory, 'files')
+    mime_types_json_path = os.path.join(temp_directory, 'mime.json')
+    metadata_output_path = os.path.join(
+        current_directory,
+        "results",
+        f"result_{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
+    )
     main()

@@ -4,129 +4,122 @@ from extract import *
 import os
 import datetime
 
-# Logger configuration
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
-# Fonction pour enregistrer les métadonnées extraites dans un fichier JSON
 def save_metadata_to_json(metadata_results, output_file):
     """
-    Enregistre les métadonnées extraites dans un fichier JSON.
+    Save extracted metadata to a JSON file.
     
     Args:
-        metadata_results (dict): Dictionnaire contenant les chemins de fichiers et leurs métadonnées extraites.
-        output_file (str): Chemin du fichier JSON où les résultats seront sauvegardés.
+        metadata_results (dict): Dictionary containing file paths and their extracted metadata
+        output_file (str): Path to the JSON file where results will be saved
     """
     try:
         with open(output_file, 'w', encoding='utf-8') as json_file:
             json.dump(metadata_results, json_file, indent=4, ensure_ascii=False)
-        
-        logger.info(f"Les métadonnées ont été sauvegardées dans le fichier {output_file}")
-
+        logger.info(f"Metadata saved to file {output_file}")
     except Exception as e:
-        logger.error(f"Erreur lors de la sauvegarde des métadonnées dans le fichier JSON : {e}")
+        logger.error(f"Error saving metadata to JSON file: {e}")
 
 def process_file_metadata(file_path, mime_type):
+    """
+    Process file metadata based on MIME type or file extension.
+    
+    Args:
+        file_path (str): Path to the file to process
+        mime_type (str): MIME type of the file
+        
+    Returns:
+        dict: Extracted metadata or error message if file type not supported
+    """
     try:
-        # Gestion des types MIME standard
-        if mime_type == 'application/vnd.openxmlformats-officedocument.wordprocessingml.document':
-            metadata = extract_docx_metadata(file_path)
-        elif mime_type == 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet':
-            metadata = extract_excel_metadata(file_path)
-        elif mime_type == 'application/vnd.openxmlformats-officedocument.presentationml.presentation':
-            metadata = extract_ppt_metadata(file_path)
-        elif mime_type in ['application/vnd.oasis.opendocument.text', 'application/vnd.oasis.opendocument.spreadsheet', 'application/vnd.oasis.opendocument.presentation']:
-            metadata = extract_odf_metadata(file_path)
-        elif mime_type == 'application/pdf':
-            metadata = extract_pdf_metadata(file_path)
-        elif mime_type == 'image/png':
-            metadata = extract_png_metadata(file_path)
-        elif mime_type == 'image/jpeg':
-            metadata = extract_jpeg_metadata(file_path)
-        elif mime_type == 'image/tiff':
-            metadata = extract_tiff_metadata(file_path)
-        elif mime_type == 'image/webp':
-            metadata = extract_webp_metadata(file_path)
-        elif mime_type in ['image/heic', 'image/heif']:
-            metadata = extract_heic_metadata(file_path)
+        mime_type_extractors = {
+            'application/vnd.openxmlformats-officedocument.wordprocessingml.document': extract_docx_metadata,
+            'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': extract_excel_metadata,
+            'application/vnd.openxmlformats-officedocument.presentationml.presentation': extract_ppt_metadata,
+            'application/pdf': extract_pdf_full_metadata,
+            'image/png': extract_png_metadata,
+            'image/jpeg': extract_jpeg_metadata, 
+            'image/tiff': extract_tiff_metadata,
+            'image/webp': extract_webp_metadata,
+            'image/heic': extract_heic_metadata,
+            'image/heif': extract_heic_metadata,
+            'image/svg+xml': extract_svg_metadata,
+        }
 
-        # Gestion des fichiers plain-text par extension
-        elif mime_type == 'text/plain':
-            # Récupérer l'extension du fichier
-            _, file_extension = os.path.splitext(file_path)
-            file_extension = file_extension.lower()
+        extension_extractors = {
+            '.docx': extract_docx_metadata,
+            '.xlsx': extract_excel_metadata,
+            '.pptx': extract_ppt_metadata,
+            '.pdf': extract_pdf_metadata,
+            '.png': extract_png_metadata,
+            '.jpg': extract_jpeg_metadata,
+            '.jpeg': extract_jpeg_metadata,
+            '.tiff': extract_tiff_metadata,
+            '.tif': extract_tiff_metadata,
+            '.webp': extract_webp_metadata,
+            '.heic': extract_heic_metadata,
+            '.heif': extract_heic_metadata,
+            '.svg': extract_svg_metadata,
+            '.txt': extract_txt_metadata
+        }
 
-            # Vérification de l'extension et appel de la fonction correspondante
-            if file_extension == '.docx':
-                metadata = extract_docx_metadata(file_path)
-            elif file_extension == '.xlsx':
-                metadata = extract_excel_metadata(file_path)
-            elif file_extension == '.pptx':
-                metadata = extract_ppt_metadata(file_path)
-            elif file_extension in ['.odt', '.ods', '.odp']:
-                metadata = extract_odf_metadata(file_path)
-            elif file_extension == '.pdf':
-                metadata = extract_pdf_metadata(file_path)
-            elif file_extension == '.png':
-                metadata = extract_png_metadata(file_path)
-            elif file_extension == '.jpg' or file_extension == '.jpeg':
-                metadata = extract_jpeg_metadata(file_path)
-            elif file_extension == '.tiff' or file_extension == '.tif':
-                metadata = extract_tiff_metadata(file_path)
-            elif file_extension == '.webp':
-                metadata = extract_webp_metadata(file_path)
-            elif file_extension in ['.heic', '.heif']:
-                metadata = extract_heic_metadata(file_path)
-            else:
-                metadata = f"Extension {file_extension} non prise en charge pour MIME type {mime_type}."
-        else:
-            metadata = f"MIME type {mime_type} non pris en charge."
+        if mime_type in mime_type_extractors:
+            return mime_type_extractors[mime_type](file_path)
+            
+        if mime_type in ['application/vnd.oasis.opendocument.text', 
+                        'application/vnd.oasis.opendocument.spreadsheet',
+                        'application/vnd.oasis.opendocument.presentation']:
+            return extract_odf_metadata(file_path)
 
-        return metadata
+        if mime_type == 'text/plain':
+            _, file_extension = os.path.splitext(file_path.lower())
+            if file_extension in extension_extractors:
+                return extension_extractors[file_extension](file_path)
+            return f"Extension {file_extension} not supported for MIME type {mime_type}"
+
+        return f"MIME type {mime_type} not supported"
 
     except Exception as e:
-        logger.error(f"Erreur lors du traitement de '{file_path}': {e}")
+        logger.error(f"Error processing '{file_path}': {e}")
         return None
 
-# Fonction pour lire le fichier JSON, traiter chaque fichier et sauvegarder les résultats
-def process_files_and_save_to_json(json_path, output_json_path):
+def process_files_and_save_to_json(input_json_path, output_json_path):
+    """
+    Read JSON file containing file paths and MIME types, process each file and save results.
+    
+    Args:
+        input_json_path (str): Path to input JSON file containing file paths and MIME types
+        output_json_path (str): Path where output JSON with metadata will be saved
+    """
     def convert_datetime_to_string(data):
+        """Convert datetime objects to ISO format strings in nested data structures"""
         if isinstance(data, dict):
             return {k: convert_datetime_to_string(v) for k, v in data.items()}
         elif isinstance(data, list):
             return [convert_datetime_to_string(v) for v in data]
         elif isinstance(data, datetime.datetime):
             return data.isoformat()
-        else:
-            return data
+        return data
 
     try:
-        with open(json_path, 'r') as json_file:
-            file_mime_map = json.load(json_file)
+        with open(input_json_path, 'r') as json_file:
+            file_mime_mapping = json.load(json_file)
 
-        # Dictionnaire pour stocker les résultats des métadonnées
         metadata_results = {}
-
-        # Parcourir chaque fichier dans le fichier JSON
-        for file_path, mime_type in file_mime_map.items():
-            logger.info(f"Traitement du fichier: {file_path} avec MIME type: {mime_type}")
+        for file_path, mime_type in file_mime_mapping.items():
+            logger.info(f"Processing file: {file_path} with MIME type: {mime_type}")
             metadata = process_file_metadata(file_path, mime_type)
-
             if metadata:
-                metadata = convert_datetime_to_string(metadata)
-                metadata_results[file_path] = metadata
+                metadata_results[file_path] = convert_datetime_to_string(metadata)
 
-        # Sauvegarder les résultats dans le fichier JSON
         save_metadata_to_json(metadata_results, output_json_path)
 
     except Exception as e:
-        logger.error(f"Erreur lors du traitement des fichiers et de la sauvegarde des résultats : {e}")
-
+        logger.error(f"Error processing files and saving results: {e}")
 
 if __name__ == '__main__':
-    # Exemple d'utilisation
-    json_input_path = os.path.join(os.getcwd(), 'mime.json')
+    input_json_path = os.path.join(os.getcwd(), 'mime.json')
     output_json_path = os.path.join(os.getcwd(), "results", f"result_{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}.json")
-
-    # Appel de la fonction pour traiter les fichiers et sauvegarder les métadonnées
-    process_files_and_save_to_json(json_input_path, output_json_path)
+    process_files_and_save_to_json(input_json_path, output_json_path)
